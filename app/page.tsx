@@ -1,101 +1,394 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+import { useEffect, useState,useRef, use } from "react";
+import { socket } from "@/socket";
+import { Stage, Layer, Rect, Circle,Text,Arrow,Line,Transformer } from 'react-konva';
+import { cn } from "@/lib/utils"
+import { v4 as uuid } from "uuid";
+import {
+  Lock,
+  Hand,
+  MousePointer2,
+  Square,
+  Diamond,
+  Circle as c,
+  ArrowRight,
+  Minus,
+  Pencil,
+  Type
+} from "lucide-react"
+import { set } from "react-hook-form";
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+const tools = [
+  { icon: Lock, label: "Lock" },
+  { icon: Hand, label: "Hand" },
+  { icon: MousePointer2, label: "Select" },
+  { icon: Square, label: "Rectangle" },
+  { icon: c, label: "Circle" },
+  { icon: ArrowRight, label: "Arrow" },
+  { icon: Minus, label: "Line" },
+  { icon: Type, label: "Text" },
+]
+
+interface Shapes{
+  id:string,
+  type:string,
+  color:string,
+  x?:number,
+  y?:number,
+  width?:number,
+  height?:number,
+  fill?:boolean,
+  text?:string,
+  fontSize?:number,
+  italic?:boolean,
+  rotation?:number,
+  radius?:number,
+  points?:number[],
+  
+
 }
+export default function Home() {
+  const [mousePos, setMousePos] = useState({});
+  const [users, setUsers] = useState([]);
+  const [shapes, setShapes] = useState<Shapes[]>([]);
+  const [selectedTool, setSelectedTool] = useState<string>("Select");
+  const [screenDraggable, setScreenDraggable] = useState(false);
+  const stageRef = useRef(null);
+  const currentShapeId = useRef<string | null>('');
+  const [selectedId, setSelectedId] = useState(null);
+  const transformerRef = useRef(null);
+  const layerRef = useRef(null);
+
+  useEffect(() => {
+    if (transformerRef.current && layerRef.current) {
+      console.log(selectedId);
+      const selectedNode = layerRef.current.findOne(`#${selectedId}`);
+      if (selectedNode) {
+        transformerRef.current.nodes([selectedNode]);
+        transformerRef.current.getLayer().batchDraw();
+      } else {
+        transformerRef.current.nodes([]);
+      }
+    }
+  }, [selectedId]);
+
+  useEffect(() => {
+    //socket.emit('object-change',shapes)
+    console.log("changed");
+  }, [shapes]);
+
+  useEffect(() => {
+    socket.on('object-changed', (data) => {
+      console.log('Received object-changed event:', data);
+      if (data) setShapes(data);
+    });
+  
+    return () => {
+      socket.off('object-changed'); // Clean up to avoid duplicate listeners
+    };
+  }, []);
+  
+  const isDrawing = useRef(false);
+  const [elementsDraggable, setElementsDraggable] = useState(false);
+  function onPointerDown() {
+    if(selectedTool === 'Hand' || selectedTool === 'Lock' || selectedTool === 'Select')return
+    const stage = stageRef.current;
+    const pos = stage?.getPointerPosition();
+    const id = uuid();
+    currentShapeId.current = id;
+    isDrawing.current = true
+    switch(selectedTool){
+      case 'Rectangle':
+        const rect:Shapes = {
+          id,
+          type: "Rectangle",
+          x: pos.x,
+          y: pos.y,
+          width: 20,
+          height: 20,
+          color: "blue",
+        };
+        setShapes([...shapes,rect]);
+        break;
+      case 'Circle':
+        const circle:Shapes = {
+          id,
+          type: "Circle",
+          x: pos.x,
+          y: pos.y,
+          radius: 20,
+          color: 'red',
+        }
+        setShapes([...shapes,circle]);
+        break;
+      case 'Arrow':
+        const arrow:Shapes = {
+          id,
+          type: "Arrow",
+          points: [pos.x, pos.y, pos.x + 20, pos.y + 20],
+          color: 'red',
+        }
+        setShapes([...shapes,arrow]);
+        break;
+      case 'Line':
+        const line:Shapes = {
+          id,
+          type: "Line",
+          x: pos.x,
+          y: pos.y,
+          color: 'red',
+        }
+        break;
+    }
+    
+  }
+  function onPointerMove() {
+    if(selectedTool === 'Hand' || selectedTool === 'Lock' || selectedTool === 'Select' || !isDrawing.current)return
+    const stage = stageRef.current;
+    const pos = stage?.getPointerPosition();
+    socket.emit('object-change',shapes)
+    switch(selectedTool){
+      case 'Rectangle':
+        setShapes((prevShapes) => {
+          const updatedShapes = prevShapes.map((shape) => {
+            if (shape.id === currentShapeId.current && shape.type == 'Rectangle') {
+              return {
+                ...shape,
+                width: pos.x - shape.x,
+                height: pos.y - shape.y,
+              };
+            }
+            return shape;
+          });
+          return updatedShapes;
+        });
+        break;
+      case 'Circle':
+        setShapes((prevShapes) => {
+          const updatedShapes = prevShapes.map((shape) => {
+            if (shape.id === currentShapeId.current && shape.type == 'Circle') {
+              return {
+                ...shape,
+                radius: Math.sqrt((pos.y-shape.y)**2 + (pos.x - shape.x)**2),
+
+              };
+            }
+            return shape;
+          });
+          return updatedShapes;
+        });
+        case 'Arrow':
+          setShapes((prevShapes) => {
+            const updatedShapes = prevShapes.map((shape) => {
+              if (shape.id === currentShapeId.current && shape.type == 'Arrow') {
+                return {
+                  ...shape,
+                  points:[shape.points[0],shape.points[1],pos.x,pos.y],
+  
+                };
+              }
+              return shape;
+            });
+            return updatedShapes;
+          });
+        
+      
+    }
+  }
+  function onPointerUp() {
+    isDrawing.current = false;
+  }  
+  function Toolbar() {
+    function handleClick(label:string){
+      setSelectedTool(label)
+      if(label === 'Hand'){
+        setScreenDraggable(true)
+        return
+      }
+      if(label === 'Select') {
+        setElementsDraggable(true)
+        return
+      }
+      setScreenDraggable(false) 
+      setElementsDraggable(false)
+    }
+    return (
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 p-1.5 rounded-lg bg-zinc-900 shadow-lg flex gap-0.5 z-50 cursor-pointer">
+        {tools.map((tool) => (
+          <button
+            key={tool.label}
+            onClick={() => {
+              handleClick(tool.label)
+              
+            }}
+            className={cn(
+              "relative group p-2 rounded-md transition-colors duration-150",
+              selectedTool === tool.label ? "bg-indigo-600 text-white" : "text-zinc-100 hover:bg-zinc-800",
+            )}
+            title={tool.label}
+          >
+            <tool.icon className="w-5 h-5" />
+            <span className="sr-only">{tool.label}</span>
+          </button>
+        ))}
+      </div>
+    )
+    }
+  useEffect(() => {
+   document.addEventListener('mousemove', (e) => {
+    setMousePos({x: e.clientX, y: e.clientY})
+    socket.emit('mousemove', {x: e.clientX, y: e.clientY})
+   })
+  })
+  socket.on('connect', () => {
+    console.log('connected')
+  })
+  return(
+    <div className="h-screen w-screen relative"> 
+    <Toolbar  /> 
+    <Stage onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onTransform={(e)=>{socket.emit('object-change',shapes)}} onDblClick={()=>{setSelectedId(null)}} width={window.innerWidth} height={window.innerHeight} draggable={screenDraggable} ref={stageRef} className={cn('',selectedTool!=='Select'  ? ' cursor-crosshair' : ' ',selectedTool==='Hand'?'cursor-grab':'')}>
+      <Layer ref={layerRef} > 
+        {shapes.map((shape) => {
+  switch (shape.type) {
+    case 'Rectangle':
+      return (
+        <Rect
+          key={shape.id}
+          id={shape.id}
+          x={shape.x}
+          y={shape.y}
+          width={shape.width}
+          height={shape.height}
+          fill={shape.color}
+          draggable={elementsDraggable}
+          onClick={() =>{ setSelectedId(shape.id);}}
+          onDragMove={(e) => {
+            let x = e.currentTarget.attrs.x;
+            let y = e.currentTarget.attrs.y;
+            setShapes((prevShapes) =>
+              prevShapes.map((s) =>
+                s.id === shape.id ? { ...s, x, y } : s
+              )
+            );
+
+            socket.emit('object-change',shapes)
+          }}
+          
+          onTransformStart={(e) => {
+            const node = e.target;
+            setShapes((prev) =>{
+              console.log(prev, "prev")
+              const updatedShapes = prev.map((s) =>
+                s.id === shape.id ? { ...s, x: node.x(), y: node.y(), width: node.width(), height: node.height() } : s
+              )
+              console.log(updatedShapes ,"updated")
+              return updatedShapes
+            }
+            );
+            socket.emit('object-change',shapes)
+            
+          }}
+        />
+      );
+    case 'Circle':
+      return (
+        <Circle
+          key={shape.id}
+          id={shape.id}
+          x={shape.x}
+          y={shape.y}
+          radius={shape.radius}
+          fill={shape.color}
+          draggable={elementsDraggable}
+          onClick={() => setSelectedId(shape.id)}
+          onDragMove={(e) => {
+            let x = e.currentTarget.attrs.x;
+            let y = e.currentTarget.attrs.y;
+            setShapes((prevShapes) =>
+              prevShapes.map((s) =>
+                s.id === shape.id ? { ...s, x, y } : s
+              )
+            );
+          }}
+          onTransform={(e) => {
+            const node = e.target;
+            setShapes((prev) =>
+              prev.map((s) =>
+                s.id === shape.id ? { ...s, x: node.x(), y: node.y(), radius: node.radius() } : s
+              )
+            );
+          }}
+        />
+      );
+      case 'Line':
+        return (
+          <Line
+            key={shape.id}
+            id={shape.id}
+            points={shape.points}
+            stroke={shape.color}
+            strokeWidth={2}
+            draggable={elementsDraggable}
+            onClick={() => setSelectedId(shape.id)}
+            onDragMove={(e) => {
+              const newPoints = [...shape.points];
+              newPoints[0] = e.currentTarget.attrs.points[0];
+              newPoints[1] = e.currentTarget.attrs.points[1];
+              setShapes((prevShapes) =>
+                prevShapes.map((s) =>
+                  s.id === shape.id ? { ...s, points: newPoints } : s
+                )
+              );
+            }}
+            onTransform={(e) => {
+              const node = e.target;
+              setShapes((prev) =>
+                prev.map((s) =>
+                  s.id === shape.id ? { ...s, points: node.points() } : s
+                )
+              );
+            }}
+          />
+        );
+    case 'Arrow':
+      return (
+        <Arrow
+          key={shape.id}
+          id={shape.id}
+          points={shape.points}
+          stroke={shape.color}
+          draggable={elementsDraggable}
+          onClick={() => setSelectedId(shape.id)}
+          onDragMove={(e) => {
+            const newPoints = [...shape.points];
+            newPoints[0] = e.currentTarget.attrs.points[0];
+            newPoints[1] = e.currentTarget.attrs.points[1];
+            setShapes((prevShapes) =>
+              prevShapes.map((s) =>
+                s.id === shape.id ? { ...s, points: newPoints } : s
+              )
+            );
+          }}
+          onTransform={(e) => {
+            const node = e.target;
+            setShapes((prev) =>
+              prev.map((s) =>
+                s.id === shape.id ? { ...s, points: node.points() } : s
+              )
+            );
+          }}
+        />
+      );
+    default:
+      return null;
+  }
+})}
+      <Transformer ref={transformerRef} />
+      </Layer>
+    </Stage>
+  </div>
+
+  )
+}
+
